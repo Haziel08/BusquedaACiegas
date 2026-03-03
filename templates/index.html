@@ -1,145 +1,165 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Tarea: Búsqueda a Ciegas</title>
+    <meta charset="UTF-8">
+    <title>Tarea 1: Búsqueda a Ciegas - IA</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/standalone/umd/vis-network.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #f0f2f5; }
-        header { background: #002b7a; color: #f2c100; padding: 15px; text-align: center; font-weight: bold; }
+        header { background: #002b7a; color: #f2c100; padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         .main-container { display: flex; flex: 1; overflow: hidden; }
-        #grafo { flex: 2; background: white; border-right: 2px solid #002b7a; }
-        #panel { flex: 1; padding: 20px; background: #fff; overflow-y: auto; box-shadow: -2px 0 5px rgba(0,0,0,0.1); }
+        #network-container { flex: 2; background: white; border-right: 2px solid #002b7a; position: relative; }
+        #sidebar { flex: 1; padding: 20px; background: #fff; display: flex; flex-direction: column; overflow-y: auto; }
         .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-        select, button { padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; }
-        .btn-search { background: #002b7a; color: white; border: none; cursor: pointer; }
-        .btn-step { background: #f2c100; color: #002b7a; border: none; cursor: pointer; font-weight: bold; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        #log { background: #f8f9fa; border: 1px solid #ddd; padding: 15px; font-family: 'Consolas', monospace; white-space: pre-wrap; font-size: 13px; min-height: 300px; }
-        .tag-del { color: #d93025; text-decoration: line-through; opacity: 0.6; }
-        .solucion-box { color: #1e8e3e; font-weight: bold; margin-top: 15px; padding-top: 10px; border-top: 2px dashed #1e8e3e; }
+        select, button { padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; cursor: pointer; }
+        button { background: #002b7a; color: white; border: none; font-weight: bold; transition: 0.3s; }
+        button:hover { background: #001d52; }
+        .btn-step { background: #f2c100; color: #002b7a; }
+        #log { flex-grow: 1; background: #f8f9fa; border: 1px solid #ddd; padding: 15px; font-family: 'Consolas', monospace; font-size: 13px; white-space: pre-wrap; }
+        .tag-del { color: #d93025; text-decoration: line-through; opacity: 0.5; }
+        .solucion { color: #1e8e3e; font-weight: bold; border-top: 2px dashed #1e8e3e; margin-top: 15px; padding-top: 10px; }
     </style>
 </head>
 <body>
-    <header><h1>Tarea 1: Búsqueda a Ciegas - Inteligencia Artificial</h1></header>
-    <div class="main-container">
-        <div id="grafo"></div>
-        <div id="panel">
-            <div class="controls">
-                <label>Inicio:</label><select id="selInicio"></select>
-                <label>Meta:</label><select id="selMeta"></select>
-                <button class="btn-search" onclick="iniciarAlgoritmo('BFS')">Amplitud</button>
-                <button class="btn-search" onclick="iniciarAlgoritmo('DFS')">Profundidad</button>
-                <button id="btnPaso" class="btn-step" onclick="siguientePaso()" disabled>Paso ></button>
-                <button id="btnAuto" class="btn-step" onclick="toggleAuto()" disabled>Auto Play ▶</button>
-            </div>
-            <div id="log">Selecciona inicio/meta y el algoritmo para comenzar.</div>
+
+<header>
+    <h1>Tarea 1: Búsqueda a Ciegas - Inteligencia Artificial</h1>
+</header>
+
+<div class="main-container">
+    <div id="network-container"></div>
+    <div id="sidebar">
+        <div class="controls">
+            <label>Inicio:</label><select id="selInicio"></select>
+            <label>Meta:</label><select id="selMeta"></select>
+            <button onclick="iniciar('BFS')">Amplitud (BFS)</button>
+            <button onclick="iniciar('DFS')">Profundidad (DFS)</button>
+            <button class="btn-step" id="btnPaso" onclick="pasoManual()" disabled>Paso ></button>
+            <button class="btn-step" id="btnAuto" onclick="toggleAuto()" disabled>Auto Play ▶</button>
         </div>
+        <div id="log">Selecciona los nodos y el algoritmo para comenzar.</div>
     </div>
+</div>
 
-    <script>
-        let todosLosPasos = [];
-        let pasoActualIdx = 0;
-        let playTimer = null;
-        let nodesData = new vis.DataSet();
-        let edgesData = new vis.DataSet();
-        let networkObj = null;
+<script>
+    // --- GRAFO (Tu modelo original) ---
+    const grafo = {
+        'Entrada': ['Sala', 'Garage'], 'Sala': ['Entrada', 'Estudio', 'Comedor', 'Garage', 'Pasillo'],
+        'Estudio': ['Sala', 'Oficina'], 'Oficina': ['Estudio', 'Pasillo'],
+        'Comedor': ['Sala', 'Cocina', 'Pasillo'], 'Cocina': ['Comedor', 'Patio', 'Lavandería'],
+        'Pasillo': ['Sala', 'Comedor', 'Oficina', 'Rec1', 'Rec2', 'Baño1', 'Escaleras'],
+        'Rec1': ['Pasillo', 'Lavandería'], 'Rec2': ['Pasillo', 'Baño2'], 'Baño1': ['Pasillo'],
+        'Baño2': ['Rec2'], 'Garage': ['Entrada', 'Sala', 'Patio'], 'Patio': ['Garage', 'Cocina', 'Lavandería', 'Terraza'],
+        'Lavandería': ['Cocina', 'Patio', 'Rec1', 'Bodega'], 'Bodega': ['Lavandería'],
+        'Escaleras': ['Pasillo', 'Terraza'], 'Terraza': ['Escaleras', 'Patio']
+    };
 
-        // Cargar datos iniciales
-        window.onload = async () => {
-            const res = await fetch('/nodos');
-            const listaNodos = await res.json();
-            const selI = document.getElementById('selInicio');
-            const selM = document.getElementById('selMeta');
-            
-            listaNodos.forEach(n => {
-                selI.add(new Option(n, n));
-                selM.add(new Option(n, n));
-                nodesData.add({id: n, label: n, color: '#97c2fc'});
+    let nodes = new vis.DataSet();
+    let edges = new vis.DataSet();
+    let network = null;
+    let pasos = [];
+    let idxActual = 0;
+    let timer = null;
+
+    // Inicializar Grafo Visual
+    window.onload = () => {
+        const selI = document.getElementById('selInicio');
+        const selM = document.getElementById('selMeta');
+        Object.keys(grafo).sort().forEach(n => {
+            selI.add(new Option(n, n));
+            selM.add(new Option(n, n));
+            nodes.add({id: n, label: n, color: '#97c2fc'});
+            grafo[n].forEach(vecino => {
+                if (n < vecino) edges.add({from: n, to: vecino});
             });
-            selI.value = "Entrada"; selM.value = "Bodega";
+        });
+        selI.value = "Entrada"; selM.value = "Bodega";
+        network = new vis.Network(document.getElementById('network-container'), {nodes, edges}, {
+            physics: { enabled: true, solver: 'repulsion' },
+            nodes: { shape: 'dot', size: 25 }
+        });
+    };
 
-            // Estructura fija de la casa
-            const links = [
-                {from:'Entrada',to:'Sala'},{from:'Entrada',to:'Garage'},{from:'Sala',to:'Estudio'},
-                {from:'Sala',to:'Comedor'},{from:'Sala',to:'Garage'},{from:'Sala',to:'Pasillo'},
-                {from:'Estudio',to:'Oficina'},{from:'Oficina',to:'Pasillo'},{from:'Comedor',to:'Cocina'},
-                {from:'Comedor',to:'Pasillo'},{from:'Cocina',to:'Patio'},{from:'Cocina',to:'Lavandería'},
-                {from:'Pasillo',to:'Oficina'},{from:'Pasillo',to:'Rec1'},{from:'Pasillo',to:'Rec2'},
-                {from:'Pasillo',to:'Baño1'},{from:'Pasillo',to:'Escaleras'},{from:'Rec1',to:'Lavandería'},
-                {from:'Rec2',to:'Baño2'},{from:'Patio',to:'Garage'},{from:'Patio',to:'Lavandería'},
-                {from:'Patio',to:'Terraza'},{from:'Lavandería',to:'Bodega'},{from:'Escaleras',to:'Terraza'}
-            ];
-            edgesData.add(links);
-            networkObj = new vis.Network(document.getElementById('grafo'), {nodes: nodesData, edges: edgesData}, {
-                physics: { enabled: true, solver: 'repulsion' },
-                nodes: { shape: 'dot', size: 25 }
-            });
-        };
+    // --- LÓGICA DE BÚSQUEDA (Misma que tu Python) ---
+    function generarPasos(modo, inicio, meta) {
+        let open = [{nodo: inicio, padre: null, ruta: [inicio]}];
+        let close = [];
+        let historial = [];
+        let historialOpen = [];
 
-        async function iniciarAlgoritmo(modo) {
-            detenerAuto();
-            pasoActualIdx = 0;
-            const res = await fetch('/buscar', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ 
-                    modo, 
-                    inicio: document.getElementById('selInicio').value, 
-                    meta: document.getElementById('selMeta').value 
-                })
-            });
-            todosLosPasos = await res.json();
-            document.getElementById('btnPaso').disabled = false;
-            document.getElementById('btnAuto').disabled = false;
-            siguientePaso();
-        }
+        while (open.length > 0) {
+            let actual = (modo === 'BFS') ? open.shift() : open.pop();
+            historialOpen.push(actual);
 
-        function siguientePaso() {
-            if (pasoActualIdx >= todosLosPasos.length) { detenerAuto(); return; }
-            
-            const [listaOpen, nodoActual, listaClose, rutaFinal] = todosLosPasos[pasoActualIdx];
-            
-            // Renderizar Log
-            let logTexto = "<b>--- OPEN ---</b>\n";
-            // Invertimos el render para que el último en entrar se vea arriba (LIFO/FIFO visual)
-            [...listaOpen].reverse().forEach(item => {
-                const yaProcesado = listaClose.includes(item.nodo);
-                const linea = `| ${item.nodo}(${item.padre || 'Root'})\n`;
-                logTexto += yaProcesado ? `<span class="tag-del">${linea}</span>` : linea;
-            });
-            logTexto += `\n<b>--- CLOSE ---</b>\n${listaClose.join(', ')}`;
-            
-            if (rutaFinal) {
-                logTexto += `\n\n<div class="solucion-box">✔ SOLUCIÓN ENCONTRADA:\n${rutaFinal.join(' -> ')}</div>`;
-                detenerAuto();
-            }
-            document.getElementById('log').innerHTML = logTexto;
-
-            // Actualizar Colores del Grafo
-            nodesData.forEach(node => {
-                let colorNodo = '#97c2fc'; // Azul original
-                if (rutaFinal && rutaFinal.includes(node.id)) colorNodo = '#2ecc71'; // Verde Solución
-                else if (listaClose.includes(node.id)) colorNodo = '#f39c12'; // Naranja Visitado
-                else if (node.id === nodoActual.nodo) colorNodo = '#f2c100'; // Oro Actual
+            if (!close.includes(actual.nodo)) {
+                close.push(actual.nodo);
+                if (actual.nodo === meta) {
+                    historial.push({open: [...historialOpen, ...open], actual, close: [...close], ruta: actual.ruta});
+                    return historial;
+                }
+                let vecinos = grafo[actual.nodo];
+                if (modo === 'DFS') vecinos = [...vecinos].reverse();
                 
-                nodesData.update({id: node.id, color: colorNodo});
-            });
-
-            pasoActualIdx++;
-        }
-
-        function toggleAuto() {
-            if (playTimer) detenerAuto();
-            else {
-                document.getElementById('btnAuto').innerText = "Pausar ⏸";
-                playTimer = setInterval(siguientePaso, 1000);
+                vecinos.forEach(v => {
+                    if (!close.includes(v) && !open.some(o => o.nodo === v)) {
+                        open.push({nodo: v, padre: actual.nodo, ruta: [...actual.ruta, v]});
+                    }
+                });
             }
+            historial.push({open: [...historialOpen, ...open], actual, close: [...close], ruta: null});
         }
+        return historial;
+    }
 
-        function detenerAuto() {
-            clearInterval(playTimer); playTimer = null;
-            document.getElementById('btnAuto').innerText = "Auto Play ▶";
+    function iniciar(modo) {
+        detenerAuto();
+        idxActual = 0;
+        pasos = generarPasos(modo, document.getElementById('selInicio').value, document.getElementById('selMeta').value);
+        document.getElementById('btnPaso').disabled = false;
+        document.getElementById('btnAuto').disabled = false;
+        renderPaso();
+    }
+
+    function renderPaso() {
+        if (idxActual >= pasos.length) { detenerAuto(); return; }
+        const {open, actual, close, ruta} = pasos[idxActual];
+
+        // Log visual con tachado correcto
+        let logHTML = "<b>--- OPEN ---</b>\n";
+        [...open].reverse().forEach(item => {
+            const tachado = close.includes(item.nodo);
+            const texto = `| ${item.nodo}(${item.padre || 'Root'})\n`;
+            logHTML += tachado ? `<span class="tag-del">${texto}</span>` : texto;
+        });
+        logHTML += `\n<b>--- CLOSE ---</b>\n${close.join(', ')}`;
+        if (ruta) logHTML += `\n\n<div class="solucion">✔ SOLUCIÓN ENCONTRADA:\n${ruta.join(' -> ')}</div>`;
+        document.getElementById('log').innerHTML = logHTML;
+
+        // Colores del Grafo
+        nodes.forEach(n => {
+            let color = '#97c2fc';
+            if (ruta && ruta.includes(n.id)) color = '#2ecc71'; // Verde
+            else if (close.includes(n.id)) color = '#f39c12'; // Naranja
+            else if (n.id === actual.nodo) color = '#f2c100'; // Amarillo
+            nodes.update({id: n.id, color: color});
+        });
+        idxActual++;
+    }
+
+    function pasoManual() { detenerAuto(); renderPaso(); }
+
+    function toggleAuto() {
+        if (timer) detenerAuto();
+        else {
+            document.getElementById('btnAuto').innerText = "Pausar ⏸";
+            timer = setInterval(renderPaso, 800);
         }
-    </script>
+    }
+
+    function detenerAuto() {
+        clearInterval(timer); timer = null;
+        document.getElementById('btnAuto').innerText = "Auto Play ▶";
+    }
+</script>
 </body>
 </html>
