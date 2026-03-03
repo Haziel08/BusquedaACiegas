@@ -4,14 +4,19 @@
     <title>Tarea: Búsqueda a Ciegas</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/standalone/umd/vis-network.min.js"></script>
     <style>
-        /* Estilos estilo UNAM (Azul y Oro) */
-        body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-        header { background: #002b7a; color: #f2c100; padding: 10px; text-align: center; }
-        .container { display: flex; flex: 1; }
-        #grafo { flex: 2; border-right: 2px solid #002b7a; }
-        #panel { flex: 1; padding: 20px; background: #fafafa; overflow-y: auto; }
-        .node-del { color: red; text-decoration: line-through; display: block; }
-        .btn-step { background: #f2c100; color: #002b7a; border: none; padding: 10px; cursor: pointer; font-weight: bold; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background-color: #f4f4f9; }
+        header { background: #002b7a; color: #f2c100; padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .container { display: flex; flex: 1; overflow: hidden; }
+        #grafo { flex: 2; background: white; border-right: 2px solid #002b7a; }
+        #panel { flex: 1; padding: 20px; background: #ffffff; overflow-y: auto; display: flex; flex-direction: column; }
+        .controles-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        select, button { padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; }
+        .btn-primario { background: #002b7a; color: white; cursor: pointer; border: none; }
+        .btn-secundario { background: #f2c100; color: #002b7a; cursor: pointer; border: none; font-weight: bold; }
+        button:disabled { background: #ddd; cursor: not-serif; }
+        #log { margin-top: 20px; font-family: 'Consolas', monospace; white-space: pre-wrap; background: #f8f8f8; padding: 10px; border: 1px solid #ddd; flex-grow: 1; font-size: 13px; }
+        .node-del { color: red; text-decoration: line-through; }
+        .solucion { color: green; font-weight: bold; border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -19,11 +24,20 @@
     <div class="container">
         <div id="grafo"></div>
         <div id="panel">
-            <h3>Controles</h3>
-            <button class="btn-step" onclick="iniciar('BFS')">Amplitud</button>
-            <button class="btn-step" onclick="iniciar('DFS')">Profundidad</button>
-            <button id="btnAuto" class="btn-step" onclick="toggleAuto()" style="margin-top:10px">Auto Play ▶</button>
-            <div id="log" style="margin-top:20px; font-family: monospace; white-space: pre;"></div>
+            <h3>Controles de Simulación</h3>
+            <div class="controles-group">
+                <label>Inicio:</label><select id="selInicio"></select>
+                <label>Meta:</label><select id="selMeta"></select>
+            </div>
+            <div class="controles-group">
+                <button class="btn-primario" onclick="prepararBusqueda('BFS')">Amplitud</button>
+                <button class="btn-primario" onclick="prepararBusqueda('DFS')">Profundidad</button>
+            </div>
+            <div class="controles-group">
+                <button id="btnPaso" class="btn-secundario" onclick="mostrarSiguientePaso()" disabled>Paso ></button>
+                <button id="btnAuto" class="btn-secundario" onclick="toggleAuto()" disabled>Auto Play ▶</button>
+            </div>
+            <div id="log">Esperando inicio de búsqueda...</div>
         </div>
     </div>
 
@@ -31,38 +45,114 @@
         let pasos = [];
         let pasoActual = 0;
         let timer = null;
+        let network = null;
+        let nodosVis = new vis.DataSet();
+        let aristasVis = new vis.DataSet();
 
-        async function iniciar(modo) {
+        // 1. Cargar nodos y configurar Grafo al iniciar
+        window.onload = async () => {
+            const res = await fetch('/nodos');
+            const listaNodos = await res.json();
+            const selInicio = document.getElementById('selInicio');
+            const selMeta = document.getElementById('selMeta');
+            
+            listaNodos.forEach(n => {
+                selInicio.add(new Option(n, n));
+                selMeta.add(new Option(n, n));
+                nodosVis.add({id: n, label: n, color: '#97c2fc'});
+            });
+            selInicio.value = "Entrada";
+            selMeta.value = "Bodega";
+
+            // Definir conexiones (puedes automatizarlas si el servidor las envía)
+            const conexiones = [
+                {from: 'Entrada', to: 'Sala'}, {from: 'Entrada', to: 'Garage'},
+                {from: 'Sala', to: 'Estudio'}, {from: 'Sala', to: 'Comedor'}, {from: 'Sala', to: 'Pasillo'},
+                {from: 'Estudio', to: 'Oficina'}, {from: 'Oficina', to: 'Pasillo'},
+                {from: 'Comedor', to: 'Cocina'}, {from: 'Cocina', to: 'Patio'}, {from: 'Cocina', to: 'Lavandería'},
+                {from: 'Pasillo', to: 'Rec1'}, {from: 'Pasillo', to: 'Rec2'}, {from: 'Pasillo', to: 'Baño1'},
+                {from: 'Rec1', to: 'Lavandería'}, {from: 'Rec2', to: 'Baño2'}, {from: 'Garage', to: 'Patio'},
+                {from: 'Patio', to: 'Terraza'}, {from: 'Terraza', to: 'Escaleras'}, {from: 'Escaleras', to: 'Pasillo'}
+            ];
+            aristasVis.add(conexiones);
+
+            const container = document.getElementById('grafo');
+            network = new vis.Network(container, {nodes: nodosVis, edges: aristasVis}, {
+                physics: { stabilization: true },
+                nodes: { shape: 'dot', size: 20, font: { size: 14 } }
+            });
+        };
+
+        // 2. Lógica de Control
+        async function prepararBusqueda(modo) {
+            detenerAuto();
             pasoActual = 0;
+            const inicio = document.getElementById('selInicio').value;
+            const meta = document.getElementById('selMeta').value;
+            
             const res = await fetch('/buscar', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ modo, inicio: 'Entrada', meta: 'Bodega' })
+                body: JSON.stringify({ modo, inicio, meta })
             });
             pasos = await res.json();
-            mostrarPaso();
+            
+            document.getElementById('btnPaso').disabled = false;
+            document.getElementById('btnAuto').disabled = false;
+            mostrarSiguientePaso();
         }
 
-        function mostrarPaso() {
-            if (pasoActual >= pasos.length) return;
+        function mostrarSiguientePaso() {
+            if (pasoActual >= pasos.length) {
+                detenerAuto();
+                return;
+            }
+
             const [open, actual, close, ruta] = pasos[pasoActual];
             
-            // Dibujar el log (OPEN/CLOSE)
-            let logHTML = "<b>--- OPEN ---</b>\n";
-            open.reverse().forEach(e => {
-                const esVisitado = close.includes(e.nodo);
-                logHTML += `<span class="${esVisitado ? 'node-del' : ''}">| ${e.nodo}(${e.padre || 'Root'})</span>`;
+            // Actualizar Log visual
+            let logHTML = `<b>--- OPEN ---</b>\n`;
+            // Revertimos para que el tope de la pila (LIFO) o frente de cola (FIFO) se vea arriba
+            [...open].reverse().forEach(item => {
+                const esCerrado = close.includes(item.nodo);
+                const texto = `| ${item.nodo}(${item.padre || 'Root'})\n`;
+                logHTML += esCerrado ? `<span class="node-del">${texto}</span>` : texto;
             });
-            logHTML += `\n<b>--- CLOSE ---</b>\n${close.join(', ')}`;
-            if(ruta) logHTML += `\n\n<b>SOLUCIÓN:</b>\n${ruta.join(' -> ')}`;
+
+            logHTML += `\n<b>--- CLOSE ---</b>\n${close.join(', ')}\n`;
+            
+            if (ruta) {
+                logHTML += `<div class="solucion">✔ SOLUCIÓN ENCONTRADA:\n${ruta.join(' -> ')}</div>`;
+                detenerAuto();
+            }
             
             document.getElementById('log').innerHTML = logHTML;
+
+            // Actualizar colores del grafo
+            nodosVis.forEach(n => {
+                let color = '#97c2fc'; // Default
+                if (ruta && ruta.includes(n.id)) color = '#2ecc71'; // Verde (Solución)
+                else if (close.includes(n.id)) color = '#f39c12'; // Naranja (Visitado)
+                nodosVis.update({id: n.id, color: color});
+            });
+
             pasoActual++;
         }
 
         function toggleAuto() {
-            if(timer) { clearInterval(timer); timer = null; }
-            else { timer = setInterval(mostrarPaso, 800); }
+            const btn = document.getElementById('btnAuto');
+            if (timer) {
+                detenerAuto();
+            } else {
+                btn.innerText = "Pausar ⏸";
+                timer = setInterval(mostrarSiguientePaso, 1000); // 1 segundo por paso
+            }
+        }
+
+        function detenerAuto() {
+            clearInterval(timer);
+            timer = null;
+            document.getElementById('btnAuto').innerText = "Auto Play ▶";
         }
     </script>
 </body>

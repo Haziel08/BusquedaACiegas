@@ -6,8 +6,12 @@ buscador = BuscadorCasa()
 
 @app.route('/')
 def index():
-    # Carga la página principal
     return render_template('index.html')
+
+@app.route('/nodos', methods=['GET'])
+def obtener_nodos():
+    # Enviamos los nombres de las habitaciones para llenar los selectores
+    return jsonify(sorted(list(buscador.grafo.keys())))
 
 @app.route('/buscar', methods=['POST'])
 def buscar():
@@ -16,14 +20,12 @@ def buscar():
     inicio = data.get('inicio')
     meta = data.get('meta')
     
-    # Ejecutamos el algoritmo de tu modelo.py
+    # Obtenemos todos los pasos del generador de modelo.py
     if modo == "BFS":
-        generador = buscador.bfs_paso_a_paso(inicio, meta)
+        pasos = list(buscador.bfs_paso_a_paso(inicio, meta))
     else:
-        generador = buscador.dfs_paso_a_paso(inicio, meta)
+        pasos = list(buscador.dfs_paso_a_paso(inicio, meta))
     
-    # Convertimos todos los pasos del generador a una lista para enviarla a la web
-    pasos = list(generador)
     return jsonify(pasos)
 
 if __name__ == '__main__':
