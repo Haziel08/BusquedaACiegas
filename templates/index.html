@@ -4,19 +4,19 @@
     <title>Tarea: Búsqueda a Ciegas</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/standalone/umd/vis-network.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background-color: #f4f4f9; }
-        header { background: #002b7a; color: #f2c100; padding: 15px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #f4f4f9; }
+        header { background: #002b7a; color: #f2c100; padding: 15px; text-align: center; }
         .container { display: flex; flex: 1; overflow: hidden; }
         #grafo { flex: 2; background: white; border-right: 2px solid #002b7a; }
-        #panel { flex: 1; padding: 20px; background: #ffffff; overflow-y: auto; display: flex; flex-direction: column; }
-        .controles-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        #panel { flex: 1; padding: 20px; background: #fff; overflow-y: auto; display: flex; flex-direction: column; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
         select, button { padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; }
-        .btn-primario { background: #002b7a; color: white; cursor: pointer; border: none; }
-        .btn-secundario { background: #f2c100; color: #002b7a; cursor: pointer; border: none; font-weight: bold; }
-        button:disabled { background: #ddd; cursor: not-serif; }
-        #log { margin-top: 20px; font-family: 'Consolas', monospace; white-space: pre-wrap; background: #f8f8f8; padding: 10px; border: 1px solid #ddd; flex-grow: 1; font-size: 13px; }
-        .node-del { color: red; text-decoration: line-through; }
-        .solucion { color: green; font-weight: bold; border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px; }
+        .btn-blue { background: #002b7a; color: white; border: none; cursor: pointer; }
+        .btn-gold { background: #f2c100; color: #002b7a; border: none; cursor: pointer; font-weight: bold; }
+        button:disabled { background: #ccc; cursor: default; }
+        #log { flex-grow: 1; background: #f8f8f8; border: 1px solid #ddd; padding: 10px; font-family: monospace; white-space: pre-wrap; font-size: 13px; }
+        .tag-del { color: red; text-decoration: line-through; }
+        .solucion { color: green; font-weight: bold; margin-top: 10px; border-top: 1px solid #ddd; padding-top: 10px; }
     </style>
 </head>
 <body>
@@ -24,134 +24,109 @@
     <div class="container">
         <div id="grafo"></div>
         <div id="panel">
-            <h3>Controles de Simulación</h3>
-            <div class="controles-group">
+            <div class="controls">
                 <label>Inicio:</label><select id="selInicio"></select>
                 <label>Meta:</label><select id="selMeta"></select>
+                <button class="btn-blue" onclick="getPasos('BFS')">Amplitud</button>
+                <button class="btn-blue" onclick="getPasos('DFS')">Profundidad</button>
+                <button id="btnPaso" class="btn-gold" onclick="renderPaso()" disabled>Paso ></button>
+                <button id="btnAuto" class="btn-gold" onclick="toggleAuto()" disabled>Auto Play ▶</button>
             </div>
-            <div class="controles-group">
-                <button class="btn-primario" onclick="prepararBusqueda('BFS')">Amplitud</button>
-                <button class="btn-primario" onclick="prepararBusqueda('DFS')">Profundidad</button>
-            </div>
-            <div class="controles-group">
-                <button id="btnPaso" class="btn-secundario" onclick="mostrarSiguientePaso()" disabled>Paso ></button>
-                <button id="btnAuto" class="btn-secundario" onclick="toggleAuto()" disabled>Auto Play ▶</button>
-            </div>
-            <div id="log">Esperando inicio de búsqueda...</div>
+            <div id="log">Selecciona los nodos e inicia un algoritmo...</div>
         </div>
     </div>
 
     <script>
-        let pasos = [];
-        let pasoActual = 0;
+        let listadoPasos = [];
+        let indexActual = 0;
         let timer = null;
-        let network = null;
-        let nodosVis = new vis.DataSet();
-        let aristasVis = new vis.DataSet();
+        let nodesVis = new vis.DataSet();
+        let edgesVis = new vis.DataSet();
 
-        // 1. Cargar nodos y configurar Grafo al iniciar
         window.onload = async () => {
             const res = await fetch('/nodos');
-            const listaNodos = await res.json();
-            const selInicio = document.getElementById('selInicio');
-            const selMeta = document.getElementById('selMeta');
-            
-            listaNodos.forEach(n => {
-                selInicio.add(new Option(n, n));
-                selMeta.add(new Option(n, n));
-                nodosVis.add({id: n, label: n, color: '#97c2fc'});
+            const lista = await res.json();
+            const selI = document.getElementById('selInicio');
+            const selM = document.getElementById('selMeta');
+            lista.forEach(n => {
+                selI.add(new Option(n, n));
+                selM.add(new Option(n, n));
+                nodesVis.add({id: n, label: n, color: '#97c2fc'});
             });
-            selInicio.value = "Entrada";
-            selMeta.value = "Bodega";
+            selI.value = "Entrada"; selM.value = "Bodega";
 
-            // Definir conexiones (puedes automatizarlas si el servidor las envía)
-            const conexiones = [
-                {from: 'Entrada', to: 'Sala'}, {from: 'Entrada', to: 'Garage'},
-                {from: 'Sala', to: 'Estudio'}, {from: 'Sala', to: 'Comedor'}, {from: 'Sala', to: 'Pasillo'},
-                {from: 'Estudio', to: 'Oficina'}, {from: 'Oficina', to: 'Pasillo'},
-                {from: 'Comedor', to: 'Cocina'}, {from: 'Cocina', to: 'Patio'}, {from: 'Cocina', to: 'Lavandería'},
-                {from: 'Pasillo', to: 'Rec1'}, {from: 'Pasillo', to: 'Rec2'}, {from: 'Pasillo', to: 'Baño1'},
-                {from: 'Rec1', to: 'Lavandería'}, {from: 'Rec2', to: 'Baño2'}, {from: 'Garage', to: 'Patio'},
-                {from: 'Patio', to: 'Terraza'}, {from: 'Terraza', to: 'Escaleras'}, {from: 'Escaleras', to: 'Pasillo'}
+            // Definición de conexiones manual para el grafo visual
+            const links = [
+                {from:'Entrada',to:'Sala'},{from:'Entrada',to:'Garage'},{from:'Sala',to:'Estudio'},
+                {from:'Sala',to:'Comedor'},{from:'Sala',to:'Garage'},{from:'Sala',to:'Pasillo'},
+                {from:'Estudio',to:'Oficina'},{from:'Oficina',to:'Pasillo'},{from:'Comedor',to:'Cocina'},
+                {from:'Comedor',to:'Pasillo'},{from:'Cocina',to:'Patio'},{from:'Cocina',to:'Lavandería'},
+                {from:'Pasillo',to:'Oficina'},{from:'Pasillo',to:'Rec1'},{from:'Pasillo',to:'Rec2'},
+                {from:'Pasillo',to:'Baño1'},{from:'Pasillo',to:'Escaleras'},{from:'Rec1',to:'Lavandería'},
+                {from:'Rec2',to:'Baño2'},{from:'Patio',to:'Garage'},{from:'Patio',to:'Lavandería'},
+                {from:'Patio',to:'Terraza'},{from:'Lavandería',to:'Bodega'},{from:'Escaleras',to:'Terraza'}
             ];
-            aristasVis.add(conexiones);
-
-            const container = document.getElementById('grafo');
-            network = new vis.Network(container, {nodes: nodosVis, edges: aristasVis}, {
-                physics: { stabilization: true },
-                nodes: { shape: 'dot', size: 20, font: { size: 14 } }
-            });
+            edgesVis.add(links);
+            new vis.Network(document.getElementById('grafo'), {nodes: nodesVis, edges: edgesVis}, {physics:true});
         };
 
-        // 2. Lógica de Control
-        async function prepararBusqueda(modo) {
-            detenerAuto();
-            pasoActual = 0;
-            const inicio = document.getElementById('selInicio').value;
-            const meta = document.getElementById('selMeta').value;
-            
+        async function getPasos(modo) {
+            stopAuto();
+            indexActual = 0;
             const res = await fetch('/buscar', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ modo, inicio, meta })
+                body: JSON.stringify({ modo, inicio: document.getElementById('selInicio').value, meta: document.getElementById('selMeta').value })
             });
-            pasos = await res.json();
-            
+            listadoPasos = await res.json();
             document.getElementById('btnPaso').disabled = false;
             document.getElementById('btnAuto').disabled = false;
-            mostrarSiguientePaso();
+            renderPaso();
         }
 
-        function mostrarSiguientePaso() {
-            if (pasoActual >= pasos.length) {
-                detenerAuto();
-                return;
-            }
-
-            const [open, actual, close, ruta] = pasos[pasoActual];
+        function renderPaso() {
+            if (indexActual >= listadoPasos.length) { stopAuto(); return; }
             
-            // Actualizar Log visual
-            let logHTML = `<b>--- OPEN ---</b>\n`;
-            // Revertimos para que el tope de la pila (LIFO) o frente de cola (FIFO) se vea arriba
-            [...open].reverse().forEach(item => {
-                const esCerrado = close.includes(item.nodo);
-                const texto = `| ${item.nodo}(${item.padre || 'Root'})\n`;
-                logHTML += esCerrado ? `<span class="node-del">${texto}</span>` : texto;
+            const [open, actual, close, ruta] = listadoPasos[indexActual];
+            
+            // Log de OPEN y CLOSE
+            let html = "<b>--- OPEN ---</b>\n";
+            // Mostramos los nodos en OPEN, tachando solo los que ya están en CLOSE en este paso
+            open.slice().reverse().forEach(item => {
+                const tachado = close.includes(item.nodo);
+                const linea = `| ${item.nodo}(${item.padre || 'Root'})\n`;
+                html += tachado ? `<span class="tag-del">${linea}</span>` : linea;
             });
-
-            logHTML += `\n<b>--- CLOSE ---</b>\n${close.join(', ')}\n`;
+            html += `\n<b>--- CLOSE ---</b>\n${close.join(', ')}`;
             
             if (ruta) {
-                logHTML += `<div class="solucion">✔ SOLUCIÓN ENCONTRADA:\n${ruta.join(' -> ')}</div>`;
-                detenerAuto();
+                html += `\n\n<div class="solucion">✔ SOLUCIÓN:\n${ruta.join(' -> ')}</div>`;
+                stopAuto();
             }
-            
-            document.getElementById('log').innerHTML = logHTML;
+            document.getElementById('log').innerHTML = html;
 
             // Actualizar colores del grafo
-            nodosVis.forEach(n => {
-                let color = '#97c2fc'; // Default
-                if (ruta && ruta.includes(n.id)) color = '#2ecc71'; // Verde (Solución)
-                else if (close.includes(n.id)) color = '#f39c12'; // Naranja (Visitado)
-                nodosVis.update({id: n.id, color: color});
+            nodesVis.forEach(n => {
+                let col = '#97c2fc';
+                if (ruta && ruta.includes(n.id)) col = '#2ecc71'; // Verde
+                else if (close.includes(n.id)) col = '#f39c12'; // Naranja
+                else if (n.id === actual.nodo) col = '#f2c100'; // Amarillo (Actual)
+                nodesVis.update({id: n.id, color: col});
             });
 
-            pasoActual++;
+            indexActual++;
         }
 
         function toggleAuto() {
-            const btn = document.getElementById('btnAuto');
-            if (timer) {
-                detenerAuto();
-            } else {
-                btn.innerText = "Pausar ⏸";
-                timer = setInterval(mostrarSiguientePaso, 1000); // 1 segundo por paso
+            if (timer) stopAuto();
+            else {
+                document.getElementById('btnAuto').innerText = "Pausar ⏸";
+                timer = setInterval(renderPaso, 1000);
             }
         }
 
-        function detenerAuto() {
-            clearInterval(timer);
-            timer = null;
+        function stopAuto() {
+            clearInterval(timer); timer = null;
             document.getElementById('btnAuto').innerText = "Auto Play ▶";
         }
     </script>
