@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tarea: Búsqueda a Ciegas</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/standalone/umd/vis-network.min.js"></script>
+    <style>
+        /* Estilos estilo UNAM (Azul y Oro) */
+        body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        header { background: #002b7a; color: #f2c100; padding: 10px; text-align: center; }
+        .container { display: flex; flex: 1; }
+        #grafo { flex: 2; border-right: 2px solid #002b7a; }
+        #panel { flex: 1; padding: 20px; background: #fafafa; overflow-y: auto; }
+        .node-del { color: red; text-decoration: line-through; display: block; }
+        .btn-step { background: #f2c100; color: #002b7a; border: none; padding: 10px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <header><h1>Tarea 1: Búsqueda a Ciegas - Inteligencia Artificial</h1></header>
+    <div class="container">
+        <div id="grafo"></div>
+        <div id="panel">
+            <h3>Controles</h3>
+            <button class="btn-step" onclick="iniciar('BFS')">Amplitud</button>
+            <button class="btn-step" onclick="iniciar('DFS')">Profundidad</button>
+            <button id="btnAuto" class="btn-step" onclick="toggleAuto()" style="margin-top:10px">Auto Play ▶</button>
+            <div id="log" style="margin-top:20px; font-family: monospace; white-space: pre;"></div>
+        </div>
+    </div>
+
+    <script>
+        let pasos = [];
+        let pasoActual = 0;
+        let timer = null;
+
+        async function iniciar(modo) {
+            pasoActual = 0;
+            const res = await fetch('/buscar', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ modo, inicio: 'Entrada', meta: 'Bodega' })
+            });
+            pasos = await res.json();
+            mostrarPaso();
+        }
+
+        function mostrarPaso() {
+            if (pasoActual >= pasos.length) return;
+            const [open, actual, close, ruta] = pasos[pasoActual];
+            
+            // Dibujar el log (OPEN/CLOSE)
+            let logHTML = "<b>--- OPEN ---</b>\n";
+            open.reverse().forEach(e => {
+                const esVisitado = close.includes(e.nodo);
+                logHTML += `<span class="${esVisitado ? 'node-del' : ''}">| ${e.nodo}(${e.padre || 'Root'})</span>`;
+            });
+            logHTML += `\n<b>--- CLOSE ---</b>\n${close.join(', ')}`;
+            if(ruta) logHTML += `\n\n<b>SOLUCIÓN:</b>\n${ruta.join(' -> ')}`;
+            
+            document.getElementById('log').innerHTML = logHTML;
+            pasoActual++;
+        }
+
+        function toggleAuto() {
+            if(timer) { clearInterval(timer); timer = null; }
+            else { timer = setInterval(mostrarPaso, 800); }
+        }
+    </script>
+</body>
+</html>
